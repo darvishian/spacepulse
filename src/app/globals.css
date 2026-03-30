@@ -1,0 +1,289 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Custom Properties for space theme */
+:root {
+  --color-space-dark: #0a0a2a;
+  --color-space-darker: #050515;
+  --color-space-accent: #00d4ff;
+  --color-space-accent-light: #00ffff;
+  --color-space-warning: #ff6b35;
+  --color-space-success: #00ff88;
+  --grid-size: 40px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: linear-gradient(135deg, var(--color-space-darker) 0%, #0f0f3a 100%);
+  background-attachment: fixed;
+  overflow: hidden;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-space-accent);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-space-accent-light);
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-color: var(--color-space-accent) transparent;
+  scrollbar-width: thin;
+}
+
+/* Selection color */
+::selection {
+  background-color: var(--color-space-accent);
+  color: var(--color-space-darker);
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--color-space-accent);
+  outline-offset: 2px;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(10, 10, 42, 0.7);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 212, 255, 0.1);
+}
+
+.glass-border {
+  background: rgba(10, 10, 42, 0.5);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(0, 212, 255, 0.2);
+}
+
+/* Glow effects */
+.glow-accent {
+  text-shadow: 0 0 20px rgba(0, 212, 255, 0.5);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.3);
+}
+
+.glow-accent-intense {
+  text-shadow: 0 0 30px rgba(0, 212, 255, 0.8);
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.6);
+}
+
+.glow-warning {
+  text-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+  box-shadow: 0 0 20px rgba(255, 107, 53, 0.3);
+}
+
+.glow-success {
+  text-shadow: 0 0 20px rgba(0, 255, 136, 0.5);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+}
+
+/* Grid background pattern */
+.grid-background {
+  background-image:
+    linear-gradient(
+      0deg,
+      transparent 24%,
+      rgba(0, 212, 255, 0.05) 25%,
+      rgba(0, 212, 255, 0.05) 26%,
+      transparent 27%,
+      transparent 74%,
+      rgba(0, 212, 255, 0.05) 75%,
+      rgba(0, 212, 255, 0.05) 76%,
+      transparent 77%,
+      transparent
+    ),
+    linear-gradient(
+      90deg,
+      transparent 24%,
+      rgba(0, 212, 255, 0.05) 25%,
+      rgba(0, 212, 255, 0.05) 26%,
+      transparent 27%,
+      transparent 74%,
+      rgba(0, 212, 255, 0.05) 75%,
+      rgba(0, 212, 255, 0.05) 76%,
+      transparent 77%,
+      transparent
+    );
+  background-size: 40px 40px;
+}
+
+/* Elevation utilities */
+.elevation-1 {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.elevation-2 {
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.4);
+}
+
+.elevation-3 {
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.5);
+}
+
+.elevation-4 {
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.6);
+}
+
+/* Utility for hiding scrollbar while maintaining functionality */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Loading animation */
+@keyframes shimmer {
+  0% {
+    background-position: -1000px 0;
+  }
+  100% {
+    background-position: 1000px 0;
+  }
+}
+
+.shimmer {
+  animation: shimmer 2s infinite;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 212, 255, 0.1) 50%,
+    transparent 100%
+  );
+  background-size: 1000px 100%;
+}
+
+/* Fade animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.fade-in {
+  animation: fadeIn 0.3s ease-in;
+}
+
+.fade-out {
+  animation: fadeOut 0.3s ease-out;
+}
+
+/* Slide animations */
+@keyframes slideInFromLeft {
+  from {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.slide-in-left {
+  animation: slideInFromLeft 0.3s ease-out;
+}
+
+.slide-in-right {
+  animation: slideInFromRight 0.3s ease-out;
+}
+
+/* ── Bloomberg Grid Layout ─────────────────────────────── */
+
+.bloomberg-grid {
+  height: 100% !important;
+}
+
+.bloomberg-grid .react-grid-item {
+  transition: all 200ms ease;
+}
+
+.bloomberg-grid .react-grid-item.react-grid-placeholder {
+  background: rgba(0, 212, 255, 0.08) !important;
+  border: 1px dashed rgba(0, 212, 255, 0.3) !important;
+  border-radius: 8px;
+  opacity: 1 !important;
+}
+
+.bloomberg-grid .react-grid-item > .react-resizable-handle {
+  background: none;
+}
+
+.bloomberg-grid .react-grid-item > .react-resizable-handle::after {
+  content: '';
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0 0 2px 0;
+}
+
+.bloomberg-grid .react-grid-item:hover > .react-resizable-handle::after {
+  border-color: rgba(0, 212, 255, 0.4);
+}
+
+.bloomberg-panel {
+  height: 100%;
+  width: 100%;
+}
+
+/* Popup animation */
+@keyframes zoomIn95 {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.animate-in {
+  animation: zoomIn95 0.2s ease-out;
+}
