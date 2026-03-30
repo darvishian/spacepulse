@@ -65,6 +65,7 @@ export function useSatelliteWebSocket(enabled: boolean = true): {
     if (!enabled) return;
 
     const socket = getNamespaceSocket('/satellites');
+    if (!socket) return; // No WebSocket URL configured (e.g. Vercel) — skip
 
     socket.on('connect', () => {
       connectedRef.current = true;
@@ -108,6 +109,7 @@ export function useConstellationWebSocket(
     if (!constellationName) return;
 
     const socket = getNamespaceSocket('/satellites');
+    if (!socket) return; // No WebSocket URL configured (e.g. Vercel) — skip
 
     const handleConstellationUpdate = (payload: {
       constellation: string;

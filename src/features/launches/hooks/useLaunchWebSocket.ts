@@ -64,6 +64,7 @@ export function useLaunchWebSocket(enabled: boolean = true): {
     if (!enabled) return;
 
     const socket = getNamespaceSocket('/launches');
+    if (!socket) return; // No WebSocket URL configured (e.g. Vercel) — skip
 
     socket.on('connect', () => {
       connectedRef.current = true;

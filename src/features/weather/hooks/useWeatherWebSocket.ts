@@ -92,6 +92,7 @@ export function useWeatherWebSocket(
     if (!enabled) return;
 
     const socket = getNamespaceSocket('/weather');
+    if (!socket) return; // No WebSocket URL configured (e.g. Vercel) — skip
 
     socket.on('connect', () => {
       connectedRef.current = true;

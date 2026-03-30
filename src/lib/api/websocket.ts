@@ -5,7 +5,8 @@
 
 import { io, Socket } from 'socket.io-client';
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001';
+// WebSocket URL — only connect when explicitly configured (not on Vercel serverless)
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || '';
 
 /** Shared reconnection options for all namespace sockets. */
 const SOCKET_OPTIONS = {
@@ -24,6 +25,11 @@ class WebSocketClient {
 
   connect(): Promise<void> {
     return new Promise((resolve, reject) => {
+      if (!WS_URL) {
+        // No WebSocket URL configured (e.g. Vercel deployment) — skip silently
+        resolve();
+        return;
+      }
       try {
         this.socket = io(WS_URL, SOCKET_OPTIONS);
 
@@ -98,7 +104,9 @@ const namespaceSockets = new Map<string, Socket>();
  * Get or create a socket connection for a specific namespace.
  * Socket.io namespaces share the same underlying transport.
  */
-export function getNamespaceSocket(namespace: string): Socket {
+export function getNamespaceSocket(namespace: string): Socket | null {
+  if (!WS_URL) return null; // No WebSocket URL — skip on serverless deployments
+
   const existing = namespaceSockets.get(namespace);
   if (existing?.connected) return existing;
 

@@ -13,7 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { SolarWind, KpIndex, XrayFlux, MagneticStorm } from '../types';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
 // Use raw axios instead of apiClient to avoid double-wrapping.
 // apiClient wraps responses in ApiResponse<T> which mismatches the
