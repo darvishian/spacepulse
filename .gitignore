@@ -57,5 +57,8 @@ playwright/.cache/
 # Server build output
 /server/dist/
 
+# Local git bundle artifacts
+*.bundle
+
 # TypeScript build info
 tsconfig.tsbuildinfo
