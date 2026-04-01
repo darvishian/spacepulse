@@ -24,10 +24,82 @@ export interface LiveStreamResult {
   embedUrl: string;
 }
 
+// ── Query cleanup ──────────────────────────────────────────────────────
+// Launch names often contain parenthetical designators, slashes, and
+// internal codes that hurt YouTube search relevance.
+// "Artemis II (EM-2)" → "Artemis II"
+// "Falcon 9 | Starlink Group 12-3" → "Falcon 9 Starlink Group 12-3"
+
+function cleanQuery(raw: string): string {
+  return raw
+    .replace(/\(.*?\)/g, '')       // strip parentheticals: "(EM-2)", "(Block 5)"
+    .replace(/[|/\\•·]/g, ' ')     // replace separators with spaces
+    .replace(/\s{2,}/g, ' ')       // collapse multiple spaces
+    .trim();
+}
+
+/**
+ * Build a set of progressively broader search queries from the launch name.
+ * We try the most specific query first; if it returns nothing we fall back
+ * to broader terms. This keeps quota usage low (usually the first query
+ * hits) while ensuring we find streams that use slightly different naming.
+ *
+ * Example for "Artemis II (EM-2)":
+ *   1. "Artemis II launch"
+ *   2. "Artemis II"
+ *   3. "Artemis launch live"
+ */
+function buildSearchQueries(raw: string): string[] {
+  const cleaned = cleanQuery(raw);
+  const queries: string[] = [];
+
+  // Full cleaned name + "launch"
+  queries.push(`${cleaned} launch`);
+
+  // Full cleaned name alone (catches "Artemis II live stream" titles)
+  queries.push(cleaned);
+
+  // First word (mission family) + "launch live" as a broad fallback
+  const firstWord = cleaned.split(/\s+/)[0];
+  if (firstWord && firstWord.length >= 4 && firstWord.toLowerCase() !== cleaned.toLowerCase()) {
+    queries.push(`${firstWord} launch live`);
+  }
+
+  return queries;
+}
+
+/**
+ * Execute a single YouTube search for live videos.
+ * Returns raw search result items or an empty array.
+ */
+async function youtubeSearchLive(
+  query: string,
+  apiKey: string,
+  maxResults: number = 5,
+): Promise<Array<{ id: { videoId: string }; snippet: Record<string, unknown> }>> {
+  const res = await axios.get(`${YOUTUBE_API_BASE}/search`, {
+    params: {
+      part: 'snippet',
+      q: query,
+      type: 'video',
+      eventType: 'live',
+      order: 'viewCount',
+      maxResults,
+      key: apiKey,
+    },
+    timeout: 8000,
+  });
+
+  return res.data?.items ?? [];
+}
+
 /**
  * Search YouTube for a live stream matching the given launch query.
  * Returns the stream with the highest concurrent viewer count, or null
  * if no live streams are found.
+ *
+ * Tries multiple progressively broader search queries to handle
+ * naming mismatches (e.g. "Artemis II (EM-2)" vs "Artemis 2 Launch").
  */
 async function searchLiveStream(query: string): Promise<LiveStreamResult | null> {
   const apiKey = config.youtubeApiKey;
@@ -43,28 +115,28 @@ async function searchLiveStream(query: string): Promise<LiveStreamResult | null>
   if (cached) return cached;
 
   try {
-    // Step 1: Search for live videos matching the launch name
-    const searchRes = await axios.get(`${YOUTUBE_API_BASE}/search`, {
-      params: {
-        part: 'snippet',
-        q: `${query} launch live`,
-        type: 'video',
-        eventType: 'live',
-        order: 'viewCount',
-        maxResults: 5,
-        key: apiKey,
-      },
-      timeout: 8000,
-    });
+    // Step 1: Try progressively broader search queries until we get results
+    const queries = buildSearchQueries(query);
+    let allItems: Array<{ id: { videoId: string }; snippet: Record<string, unknown> }> = [];
 
-    const items = searchRes.data?.items;
-    if (!items || items.length === 0) {
-      console.log(`[YouTube] No live streams found for "${query}"`);
+    for (const q of queries) {
+      console.log(`[YouTube] Searching: "${q}"`);
+      const items = await youtubeSearchLive(q, apiKey);
+
+      if (items.length > 0) {
+        allItems = items;
+        console.log(`[YouTube] Found ${items.length} live streams for "${q}"`);
+        break; // Use the first query that returns results
+      }
+    }
+
+    if (allItems.length === 0) {
+      console.log(`[YouTube] No live streams found for any query variant of "${query}"`);
       return null;
     }
 
     // Step 2: Get live streaming details (concurrent viewer count) for all candidates
-    const videoIds = items.map((item: { id: { videoId: string } }) => item.id.videoId).join(',');
+    const videoIds = allItems.map((item) => item.id.videoId).join(',');
 
     const detailsRes = await axios.get(`${YOUTUBE_API_BASE}/videos`, {
       params: {
