@@ -2,7 +2,7 @@
  * GET /api/launches/livestream?query=<launch name>&webcastUrl=<optional>
  *
  * Search YouTube Data API v3 for live streams matching a launch name.
- * Returns the stream with the highest concurrent viewer count.
+ * Returns up to 3 streams sorted by concurrent viewer count (highest first).
  *
  * This is the Vercel/Next.js equivalent of the Express route in
  * server/src/routes/launches.ts.
@@ -24,7 +24,7 @@ interface LiveStreamResult {
 }
 
 // Simple in-memory cache (survives across warm Vercel function invocations)
-const cache = new Map<string, { data: LiveStreamResult; expiresAt: number }>();
+const cache = new Map<string, { data: LiveStreamResult[]; expiresAt: number }>();
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 min
 
 /**
@@ -94,11 +94,13 @@ async function youtubeSearchLive(
   return data?.items ?? [];
 }
 
+const MAX_STREAMS = 3;
+
 /**
- * Search for the best live stream. Tries multiple query variants,
- * then picks the stream with the highest concurrent viewer count.
+ * Search for live streams. Tries multiple query variants,
+ * returns up to 3 streams sorted by concurrent viewer count (highest first).
  */
-async function searchLiveStream(query: string, apiKey: string): Promise<LiveStreamResult | null> {
+async function searchLiveStreams(query: string, apiKey: string): Promise<LiveStreamResult[]> {
   const cacheKey = query.toLowerCase().replace(/\s+/g, '-');
 
   // Check in-memory cache
@@ -124,7 +126,7 @@ async function searchLiveStream(query: string, apiKey: string): Promise<LiveStre
 
   if (searchItems.length === 0) {
     console.log(`[YouTube] No live streams found for any variant of "${query}"`);
-    return null;
+    return [];
   }
 
   // Get concurrent viewer counts for all candidates
@@ -141,49 +143,42 @@ async function searchLiveStream(query: string, apiKey: string): Promise<LiveStre
 
   if (!detailRes.ok) {
     console.error(`[YouTube] Videos API returned ${detailRes.status}`);
-    return null;
+    return [];
   }
 
   const detailData = await detailRes.json();
   const videos = detailData?.items;
-  if (!videos || videos.length === 0) return null;
+  if (!videos || videos.length === 0) return [];
 
-  // Pick the stream with the most concurrent viewers
-  let best: LiveStreamResult | null = null;
-  let bestViewers = -1;
-
+  // Map all streams, sort by concurrent viewers descending, take top 3
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const video of videos) {
-    const viewers = parseInt(
+  const streams: LiveStreamResult[] = videos.map((video: any) => ({
+    videoId: video.id,
+    title: video.snippet?.title ?? '',
+    channelTitle: video.snippet?.channelTitle ?? '',
+    thumbnailUrl:
+      video.snippet?.thumbnails?.high?.url ??
+      video.snippet?.thumbnails?.default?.url ?? '',
+    concurrentViewers: parseInt(
       video.liveStreamingDetails?.concurrentViewers ?? '0',
       10,
-    );
+    ),
+    embedUrl: `https://www.youtube.com/embed/${video.id}?autoplay=1&rel=0`,
+  }));
 
-    if (viewers > bestViewers) {
-      bestViewers = viewers;
-      best = {
-        videoId: video.id,
-        title: video.snippet?.title ?? '',
-        channelTitle: video.snippet?.channelTitle ?? '',
-        thumbnailUrl:
-          video.snippet?.thumbnails?.high?.url ??
-          video.snippet?.thumbnails?.default?.url ?? '',
-        concurrentViewers: viewers,
-        embedUrl: `https://www.youtube.com/embed/${video.id}?autoplay=1&rel=0`,
-      };
-    }
-  }
+  streams.sort((a, b) => b.concurrentViewers - a.concurrentViewers);
+  const top = streams.slice(0, MAX_STREAMS);
 
-  // Cache the successful result
-  if (best) {
-    cache.set(cacheKey, { data: best, expiresAt: Date.now() + CACHE_TTL_MS });
+  // Cache the results
+  if (top.length > 0) {
+    cache.set(cacheKey, { data: top, expiresAt: Date.now() + CACHE_TTL_MS });
   }
 
   console.log(
-    `[YouTube] Best stream for "${query}": ${best?.title} (${best?.concurrentViewers} viewers)`,
+    `[YouTube] Top ${top.length} streams for "${query}": ${top.map((s) => `${s.channelTitle} (${s.concurrentViewers})`).join(', ')}`,
   );
 
-  return best;
+  return top;
 }
 
 /**
@@ -223,13 +218,13 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       });
     }
 
-    // Search YouTube for the best live stream
-    const bestStream = await searchLiveStream(query, apiKey);
+    // Search YouTube for the top live streams
+    const streams = await searchLiveStreams(query, apiKey);
 
-    if (bestStream) {
+    if (streams.length > 0) {
       return NextResponse.json({
         status: 'success',
-        data: bestStream,
+        data: streams,
         source: 'youtube_search',
         timestamp: new Date().toISOString(),
       });
@@ -241,14 +236,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       if (videoId) {
         return NextResponse.json({
           status: 'success',
-          data: {
+          data: [{
             videoId,
             title: query,
             channelTitle: '',
             thumbnailUrl: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`,
             concurrentViewers: 0,
             embedUrl: `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`,
-          } satisfies LiveStreamResult,
+          } satisfies LiveStreamResult],
           source: 'webcast_url',
           timestamp: new Date().toISOString(),
         });
@@ -257,7 +252,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       status: 'success',
-      data: null,
+      data: [],
       message: 'No live streams found for this launch',
       timestamp: new Date().toISOString(),
     });

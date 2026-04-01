@@ -1,8 +1,8 @@
 /**
  * React Query hook for searching YouTube live streams for a launch.
  * Only enables the query when the launch is within 4 hours of its
- * scheduled time. Returns the stream with the highest concurrent
- * viewer count.
+ * scheduled time. Returns up to 3 streams sorted by concurrent
+ * viewer count (highest first).
  */
 
 'use client';
@@ -13,9 +13,9 @@ import type { LiveStreamResult } from '../types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
-interface BackendResponse<T> {
+interface BackendResponse {
   status: string;
-  data: T | null;
+  data: LiveStreamResult[] | null;
   source?: string;
   message?: string;
 }
@@ -49,29 +49,31 @@ export function useLivestreamSearch({
   webcastUrl,
   forceEnable = false,
 }: UseLivestreamSearchOptions): {
-  data: LiveStreamResult | null | undefined;
+  streams: LiveStreamResult[];
   isLoading: boolean;
   isWithinWindow: boolean;
 } {
   const withinWindow = isWithinStreamWindow(scheduledTime);
   const enabled = forceEnable || withinWindow;
 
-  const query = useQuery<LiveStreamResult | null>({
+  const query = useQuery<LiveStreamResult[]>({
     queryKey: ['livestream', launchName],
-    queryFn: async (): Promise<LiveStreamResult | null> => {
+    queryFn: async (): Promise<LiveStreamResult[]> => {
       try {
         const params: Record<string, string> = { query: launchName };
         if (webcastUrl) params.webcastUrl = webcastUrl;
 
-        const res = await axios.get<BackendResponse<LiveStreamResult>>(
+        const res = await axios.get<BackendResponse>(
           `${API_BASE}/launches/livestream`,
           { params, timeout: 10000 },
         );
 
-        return res.data?.data ?? null;
+        const data = res.data?.data;
+        if (!data || !Array.isArray(data)) return [];
+        return data;
       } catch (error) {
         console.error('[useLivestreamSearch] Failed:', error);
-        return null;
+        return [];
       }
     },
     enabled,
@@ -81,7 +83,7 @@ export function useLivestreamSearch({
   });
 
   return {
-    data: query.data,
+    streams: query.data ?? [],
     isLoading: query.isLoading && enabled,
     isWithinWindow: withinWindow,
   };
