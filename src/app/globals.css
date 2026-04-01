@@ -236,8 +236,11 @@ body {
   height: 100% !important;
 }
 
+/* Disable transitions on grid items entirely to prevent jittering during
+   layout recalculations (width changes, data loads, breakpoint switches).
+   Items snap to position instantly which is better UX for a dashboard. */
 .bloomberg-grid .react-grid-item {
-  transition: all 200ms ease;
+  transition: none !important;
 }
 
 .bloomberg-grid .react-grid-item.react-grid-placeholder {

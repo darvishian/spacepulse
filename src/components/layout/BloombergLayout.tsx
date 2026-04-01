@@ -13,7 +13,6 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import {
   ResponsiveGridLayout,
-  useContainerWidth,
   verticalCompactor,
   getBreakpointFromWidth,
 } from 'react-grid-layout';
@@ -31,6 +30,65 @@ import {
 } from 'lucide-react';
 
 import 'react-grid-layout/css/styles.css';
+
+// ── Stable container width hook ────────────────────────────────────────
+// Replaces react-grid-layout's useContainerWidth which renders the grid
+// at initialWidth=1280 before the real measurement arrives, causing a
+// massive layout shift on first paint. This hook delays `mounted` until
+// a real width (>0) is observed via ResizeObserver, so the grid never
+// renders with a wrong width.
+
+function useStableContainerWidth(): {
+  width: number;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  mounted: boolean;
+} {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(0);
+  const [mounted, setMounted] = useState(false);
+  const lastWidthRef = useRef(0);
+  const rafIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    // Immediate measurement attempt
+    const initialWidth = node.offsetWidth;
+    if (initialWidth > 0) {
+      lastWidthRef.current = initialWidth;
+      setWidth(initialWidth);
+      setMounted(true);
+    }
+
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const newWidth = Math.round(entry.contentRect.width);
+
+      // Only update when width changes by more than 1px (prevents sub-pixel jitter)
+      if (newWidth > 0 && Math.abs(newWidth - lastWidthRef.current) > 1) {
+        if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = requestAnimationFrame(() => {
+          rafIdRef.current = null;
+          lastWidthRef.current = newWidth;
+          setWidth(newWidth);
+          setMounted(true);
+        });
+      }
+    });
+
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+    };
+  }, []);
+
+  return { width, containerRef, mounted };
+}
 
 /** Breakpoint → LayoutItem[] mapping (exported for consumers) */
 export type Layouts = ResponsiveLayouts<string>;
@@ -147,7 +205,7 @@ export function BloombergLayout({
   rowHeight = 60,
   onPanelClose,
 }: BloombergLayoutProps): React.ReactElement {
-  const { width, containerRef, mounted } = useContainerWidth();
+  const { width, containerRef, mounted } = useStableContainerWidth();
   const [layouts, setLayouts] = useState<Layouts>(defaultLayouts);
   const [hiddenPanels, setHiddenPanels] = useState<Set<string>>(new Set());
   const [maximizedPanel, setMaximizedPanel] = useState<string | null>(null);
@@ -281,7 +339,7 @@ export function BloombergLayout({
         </div>
       )}
 
-      {mounted && (
+      {mounted ? (
         <ResponsiveGridLayout
           className="bloomberg-grid"
           width={width}
@@ -313,6 +371,11 @@ export function BloombergLayout({
             </div>
           ))}
         </ResponsiveGridLayout>
+      ) : (
+        /* Placeholder while container width is being measured */
+        <div className="flex h-full items-center justify-center">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-space-accent/30 border-t-space-accent" />
+        </div>
       )}
     </div>
   );
