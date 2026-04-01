@@ -9,9 +9,11 @@
 
 'use client';
 
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import axios from 'axios';
 import { SolarWind, KpIndex, XrayFlux, MagneticStorm } from '../types';
+import { isBackendReachable, setBackendReachable } from '@/lib/api/websocket';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
@@ -36,6 +38,10 @@ export function useSpaceWeather(): {
   isLoading: boolean;
   error: Error | null;
 } {
+  // FIX: Disable refetchInterval when backend is unreachable to prevent
+  // endless loading↔error cycling that causes panel jitter.
+  const reachable = isBackendReachable();
+
   const solarWindQuery = useQuery({
     queryKey: ['space-weather-solar-wind'],
     queryFn: async (): Promise<SolarWind | null> => {
@@ -48,6 +54,7 @@ export function useSpaceWeather(): {
           pressure: number;
           source: string;
         }>>(`${API_BASE}/weather/solar-wind`, { timeout: 10000 });
+        setBackendReachable(true);
         const d = res.data.data;
         if (!d) return null;
         return {
@@ -59,11 +66,13 @@ export function useSpaceWeather(): {
         };
       } catch (err) {
         console.error('[useSpaceWeather] Solar wind fetch failed:', err);
+        setBackendReachable(false);
         return null;
       }
     },
-    staleTime: 1000 * 60 * 2,   // 2 min — matches backend cache TTL
-    refetchInterval: 1000 * 60 * 2,
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: reachable ? 1000 * 60 * 2 : false,
+    retry: reachable ? 1 : false,
   });
 
   const kpIndexQuery = useQuery({
@@ -76,6 +85,7 @@ export function useSpaceWeather(): {
           timestamp: string;
           source: string;
         }>>(`${API_BASE}/weather/kp-index`, { timeout: 10000 });
+        setBackendReachable(true);
         const d = res.data.data;
         if (!d) return null;
         const kp = d.kpIndex;
@@ -87,11 +97,13 @@ export function useSpaceWeather(): {
         };
       } catch (err) {
         console.error('[useSpaceWeather] Kp index fetch failed:', err);
+        setBackendReachable(false);
         return null;
       }
     },
-    staleTime: 1000 * 60 * 3,   // 3 min
-    refetchInterval: 1000 * 60 * 3,
+    staleTime: 1000 * 60 * 3,
+    refetchInterval: reachable ? 1000 * 60 * 3 : false,
+    retry: reachable ? 1 : false,
   });
 
   const xrayFluxQuery = useQuery({
@@ -105,6 +117,7 @@ export function useSpaceWeather(): {
           timestamp: string;
           source: string;
         }>>(`${API_BASE}/weather/xray`, { timeout: 10000 });
+        setBackendReachable(true);
         const d = res.data.data;
         if (!d) return null;
         return {
@@ -115,27 +128,36 @@ export function useSpaceWeather(): {
         };
       } catch (err) {
         console.error('[useSpaceWeather] X-ray flux fetch failed:', err);
+        setBackendReachable(false);
         return null;
       }
     },
     staleTime: 1000 * 60 * 2,
-    refetchInterval: 1000 * 60 * 2,
+    refetchInterval: reachable ? 1000 * 60 * 2 : false,
+    retry: reachable ? 1 : false,
   });
 
-  return {
-    solarWind: solarWindQuery.data ?? null,
-    kpIndex: kpIndexQuery.data ?? null,
-    xrayFlux: xrayFluxQuery.data ?? null,
-    isLoading:
-      solarWindQuery.isLoading ||
-      kpIndexQuery.isLoading ||
-      xrayFluxQuery.isLoading,
-    error:
-      (solarWindQuery.error as Error) ||
-      (kpIndexQuery.error as Error) ||
-      (xrayFluxQuery.error as Error) ||
-      null,
-  };
+  // Memoize the return object so consumers get stable references.
+  // Without this, every render creates a new object, breaking useMemo/useCallback
+  // in downstream components (SpaceWeatherPanel, useAtRiskSatellites, etc.)
+  // and causing cascading re-renders + layout thrashing.
+  const solarWind = solarWindQuery.data ?? null;
+  const kpIndex = kpIndexQuery.data ?? null;
+  const xrayFlux = xrayFluxQuery.data ?? null;
+  const isLoading =
+    solarWindQuery.isLoading ||
+    kpIndexQuery.isLoading ||
+    xrayFluxQuery.isLoading;
+  const error =
+    (solarWindQuery.error as Error) ||
+    (kpIndexQuery.error as Error) ||
+    (xrayFluxQuery.error as Error) ||
+    null;
+
+  return useMemo(
+    () => ({ solarWind, kpIndex, xrayFlux, isLoading, error }),
+    [solarWind, kpIndex, xrayFlux, isLoading, error],
+  );
 }
 
 /**
@@ -162,8 +184,9 @@ export function useWeatherAlerts(): {
         return [];
       }
     },
-    staleTime: 1000 * 60,        // 1 min
-    refetchInterval: 1000 * 60,
+    staleTime: 1000 * 60,
+    refetchInterval: isBackendReachable() ? 1000 * 60 : false,
+    retry: isBackendReachable() ? 1 : false,
   });
 
   return {

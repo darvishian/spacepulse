@@ -17,6 +17,7 @@ import {
   LaunchStatus,
   Trajectory,
 } from '../types';
+import { isBackendReachable, setBackendReachable } from '@/lib/api/websocket';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api';
 
@@ -90,6 +91,9 @@ interface FetchLaunchesOptions {
  * Fetch upcoming launches from the backend.
  */
 export function useLaunches(options?: FetchLaunchesOptions): ReturnType<typeof useQuery<Launch[]>> {
+  // FIX: Disable refetchInterval when backend is unreachable
+  const reachable = isBackendReachable();
+
   return useQuery<Launch[]>({
     queryKey: ['launches', 'upcoming', options],
     queryFn: async (): Promise<Launch[]> => {
@@ -98,16 +102,19 @@ export function useLaunches(options?: FetchLaunchesOptions): ReturnType<typeof u
           `${API_BASE}/launches`,
           { timeout: 15000 },
         );
+        setBackendReachable(true);
         const records = res.data?.data;
         if (!records || !Array.isArray(records)) return [];
         return records.map(mapApiRecordToLaunch);
       } catch (error) {
         console.error('[useLaunches] Failed to fetch upcoming launches:', error);
+        setBackendReachable(false);
         return [];
       }
     },
-    staleTime: 1000 * 60 * 5,       // 5 minutes
-    refetchInterval: 1000 * 60 * 5,  // Refresh every 5 minutes
+    staleTime: 1000 * 60 * 5,
+    refetchInterval: reachable ? 1000 * 60 * 5 : false,
+    retry: reachable ? 1 : false,
   });
 }
 
@@ -115,6 +122,8 @@ export function useLaunches(options?: FetchLaunchesOptions): ReturnType<typeof u
  * Fetch recent launches (past N days).
  */
 export function useRecentLaunches(days: number = 30): ReturnType<typeof useQuery<Launch[]>> {
+  const reachable = isBackendReachable();
+
   return useQuery<Launch[]>({
     queryKey: ['launches', 'recent', days],
     queryFn: async (): Promise<Launch[]> => {
@@ -123,16 +132,19 @@ export function useRecentLaunches(days: number = 30): ReturnType<typeof useQuery
           `${API_BASE}/launches/recent?days=${days}`,
           { timeout: 15000 },
         );
+        setBackendReachable(true);
         const records = res.data?.data;
         if (!records || !Array.isArray(records)) return [];
         return records.map(mapApiRecordToLaunch);
       } catch (error) {
         console.error('[useLaunches] Failed to fetch recent launches:', error);
+        setBackendReachable(false);
         return [];
       }
     },
-    staleTime: 1000 * 60 * 10,       // 10 minutes
-    refetchInterval: 1000 * 60 * 10,
+    staleTime: 1000 * 60 * 10,
+    refetchInterval: reachable ? 1000 * 60 * 10 : false,
+    retry: reachable ? 1 : false,
   });
 }
 

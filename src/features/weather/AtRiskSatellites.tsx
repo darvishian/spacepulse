@@ -62,7 +62,7 @@ function getOrbitAltitude(orbitType: string): string {
 
 // ── Main component ──────────────────────────────────────────────────────
 
-export function AtRiskSatellites(): React.ReactElement {
+export const AtRiskSatellites = React.memo(function AtRiskSatellites(): React.ReactElement {
   const { isDangerous, triggerReasons, constellations, totalSatellitesAtRisk, isLoading } =
     useAtRiskSatellites();
 
@@ -123,7 +123,7 @@ export function AtRiskSatellites(): React.ReactElement {
       </div>
     </div>
   );
-}
+});
 
 // ── Quiet state (no danger) ─────────────────────────────────────────────
 

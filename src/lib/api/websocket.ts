@@ -8,12 +8,17 @@ import { io, Socket } from 'socket.io-client';
 // WebSocket URL — only connect when explicitly configured (not on Vercel serverless)
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL || '';
 
-/** Shared reconnection options for all namespace sockets. */
+/**
+ * Shared reconnection options for all namespace sockets.
+ * FIX: Reduced reconnection attempts from 10 → 3 to prevent
+ * prolonged reconnect loops when backend is unreachable (e.g. Vercel).
+ * After 3 failures the socket stays dormant until next manual connect.
+ */
 const SOCKET_OPTIONS = {
   reconnection: true,
-  reconnectionDelay: 1000,
-  reconnectionDelayMax: 5000,
-  reconnectionAttempts: 10,
+  reconnectionDelay: 2000,
+  reconnectionDelayMax: 10000,
+  reconnectionAttempts: 3,
   transports: ['websocket', 'polling'] as string[],
 };
 
@@ -91,6 +96,52 @@ class WebSocketClient {
 
 export const wsClient = new WebSocketClient();
 
+// ── Backend reachability tracker ──────────────────────────────────────
+// Tracks whether the backend API is reachable so React Query hooks can
+// disable refetchInterval and avoid endless loading↔error cycling.
+
+let backendReachable = true;
+let lastCheck = 0;
+const CHECK_COOLDOWN = 30_000; // Re-check at most every 30s
+
+/**
+ * Quick health check: try to reach the backend API root.
+ * Result is cached for CHECK_COOLDOWN ms to avoid spamming.
+ */
+export async function checkBackendReachable(): Promise<boolean> {
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || '';
+  if (!apiBase) {
+    backendReachable = false;
+    return false;
+  }
+
+  const now = Date.now();
+  if (now - lastCheck < CHECK_COOLDOWN) return backendReachable;
+  lastCheck = now;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(`${apiBase}/launches/summary`, {
+      method: 'GET',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    backendReachable = res.ok;
+  } catch {
+    backendReachable = false;
+  }
+  return backendReachable;
+}
+
+export function isBackendReachable(): boolean {
+  return backendReachable;
+}
+
+export function setBackendReachable(reachable: boolean): void {
+  backendReachable = reachable;
+}
+
 // ── Namespace Socket Manager ───────────────────────────────────────────
 
 /**
@@ -108,9 +159,13 @@ export function getNamespaceSocket(namespace: string): Socket | null {
   if (!WS_URL) return null; // No WebSocket URL — skip on serverless deployments
 
   const existing = namespaceSockets.get(namespace);
-  if (existing?.connected) return existing;
+  // Return the existing socket if it's connected OR still connecting.
+  // Only recreate if it's fully disconnected. Previously this only checked
+  // `connected`, which destroyed sockets mid-handshake and caused
+  // connect/disconnect loops on initial load.
+  if (existing && (existing.connected || !existing.disconnected)) return existing;
 
-  // Clean up stale socket if it exists but is disconnected
+  // Clean up fully disconnected socket
   if (existing) {
     existing.removeAllListeners();
     existing.disconnect();

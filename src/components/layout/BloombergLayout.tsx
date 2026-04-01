@@ -78,7 +78,7 @@ interface PanelChromeProps {
   children: React.ReactNode;
 }
 
-function PanelChrome({
+const PanelChrome = React.memo(function PanelChrome({
   title,
   icon,
   isMaximized,
@@ -133,7 +133,7 @@ function PanelChrome({
       <div className="flex-1 overflow-hidden">{children}</div>
     </div>
   );
-}
+});
 
 // ── Main Layout ─────────────────────────────────────────────────────────
 

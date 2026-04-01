@@ -90,7 +90,7 @@ function TrendIcon({ value, threshold }: { value: number; threshold: number }): 
 
 // ── Main Panel ──────────────────────────────────────────────────────────
 
-export function SpaceWeatherPanel(): React.ReactElement {
+export const SpaceWeatherPanel = React.memo(function SpaceWeatherPanel(): React.ReactElement {
   const { solarWind, kpIndex, xrayFlux, isLoading } = useSpaceWeather();
   const { alerts } = useWeatherAlerts();
 
@@ -240,7 +240,7 @@ export function SpaceWeatherPanel(): React.ReactElement {
       </div>
     </div>
   );
-}
+});
 
 // ── Sub-components ──────────────────────────────────────────────────────
 

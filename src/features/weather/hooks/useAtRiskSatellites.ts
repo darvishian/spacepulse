@@ -41,17 +41,6 @@ export interface AtRiskSummary {
   isLoading: boolean;
 }
 
-// ── Threshold checks ────────────────────────────────────────────────────
-
-function isKpDangerous(kp: KpIndex | null): boolean {
-  return (kp?.value ?? 0) >= 5;
-}
-
-function isFlareDangerous(xray: XrayFlux | null): boolean {
-  const cls = xray?.classification ?? 'A';
-  return cls === 'M' || cls === 'X';
-}
-
 // ── Risk assessment per orbit type ──────────────────────────────────────
 
 function assessRisk(
@@ -177,9 +166,14 @@ export function useAtRiskSatellites(): AtRiskSummary {
   const { kpIndex, xrayFlux, isLoading: weatherLoading } = useSpaceWeather();
   const { data: constellations, isLoading: consLoading } = useConstellationData();
 
+  // Use primitive values for memo deps to avoid recalculating when
+  // object references change but underlying values haven't.
+  const kpValue = kpIndex?.value ?? 0;
+  const flareClass = xrayFlux?.classification ?? 'A';
+
   const result = useMemo((): Omit<AtRiskSummary, 'isLoading'> => {
-    const kpDanger = isKpDangerous(kpIndex);
-    const flareDanger = isFlareDangerous(xrayFlux);
+    const kpDanger = kpValue >= 5;
+    const flareDanger = flareClass === 'M' || flareClass === 'X';
     const isDangerous = kpDanger || flareDanger;
 
     if (!isDangerous || !constellations) {
@@ -194,12 +188,11 @@ export function useAtRiskSatellites(): AtRiskSummary {
     // Build trigger explanation
     const triggerReasons: string[] = [];
     if (kpDanger) {
-      const kp = kpIndex!.value;
-      const gLevel = kp >= 9 ? 'G5' : kp >= 8 ? 'G4' : kp >= 7 ? 'G3' : kp >= 6 ? 'G2' : 'G1';
-      triggerReasons.push(`Kp ${kp} — ${gLevel} geomagnetic storm`);
+      const gLevel = kpValue >= 9 ? 'G5' : kpValue >= 8 ? 'G4' : kpValue >= 7 ? 'G3' : kpValue >= 6 ? 'G2' : 'G1';
+      triggerReasons.push(`Kp ${kpValue} — ${gLevel} geomagnetic storm`);
     }
     if (flareDanger) {
-      triggerReasons.push(`${xrayFlux!.classification}-class solar flare detected`);
+      triggerReasons.push(`${flareClass}-class solar flare detected`);
     }
 
     // Assess risk for each constellation
@@ -222,7 +215,7 @@ export function useAtRiskSatellites(): AtRiskSummary {
       constellations: assessed,
       totalSatellitesAtRisk,
     };
-  }, [kpIndex, xrayFlux, constellations]);
+  }, [kpValue, flareClass, kpIndex, xrayFlux, constellations]);
 
   return {
     ...result,

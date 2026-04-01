@@ -2,6 +2,9 @@
  * WebSocket hook for real-time launch updates.
  * Subscribes to the /launches namespace and updates React Query cache
  * when the server pushes new data.
+ *
+ * FIX (2026-03-30): Debounce cache invalidation and use stable effect
+ * deps to prevent re-registration loops.
  */
 
 'use client';
@@ -10,16 +13,12 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { getNamespaceSocket, disconnectNamespace } from '@/lib/api/websocket';
 
-interface LaunchUpdatePayload {
-  status: string;
-  data: unknown[];
-  timestamp: string;
-}
-
 /**
  * Subscribe to real-time launch updates via WebSocket.
  * Automatically invalidates the React Query cache when updates arrive,
  * triggering a re-fetch of launch data.
+ *
+ * Uses debounced invalidation to coalesce rapid events into a single refetch.
  */
 export function useLaunchWebSocket(enabled: boolean = true): {
   isConnected: boolean;
@@ -27,50 +26,55 @@ export function useLaunchWebSocket(enabled: boolean = true): {
   const queryClient = useQueryClient();
   const connectedRef = useRef(false);
 
-  const handleLaunchUpdate = useCallback(
-    (_payload: LaunchUpdatePayload) => {
-      console.log('[LaunchWS] Received update, invalidating queries');
-      // Invalidate all launch queries so React Query re-fetches
-      queryClient.invalidateQueries({ queryKey: ['launches'] });
-    },
-    [queryClient],
-  );
+  // Debounce: coalesce multiple events per frame into one invalidation
+  const pendingRef = useRef(false);
+  const rafId = useRef<number | null>(null);
 
-  const handleLaunchCreated = useCallback(
-    (payload: { data: unknown[] }) => {
-      console.log(`[LaunchWS] ${payload.data.length} new launch(es) added`);
-      queryClient.invalidateQueries({ queryKey: ['launches'] });
-    },
-    [queryClient],
-  );
-
-  const handleLaunchUpdated = useCallback(
-    (payload: { data: unknown[] }) => {
-      console.log(`[LaunchWS] ${payload.data.length} launch(es) updated`);
-      queryClient.invalidateQueries({ queryKey: ['launches'] });
-    },
-    [queryClient],
-  );
-
-  const handleLaunchRemoved = useCallback(
-    (payload: { data: unknown[] }) => {
-      console.log(`[LaunchWS] ${payload.data.length} launch(es) removed`);
-      queryClient.invalidateQueries({ queryKey: ['launches'] });
-    },
-    [queryClient],
-  );
+  const scheduleInvalidation = useCallback(() => {
+    pendingRef.current = true;
+    if (rafId.current === null) {
+      rafId.current = requestAnimationFrame(() => {
+        rafId.current = null;
+        if (pendingRef.current) {
+          pendingRef.current = false;
+          queryClient.invalidateQueries({ queryKey: ['launches'] });
+        }
+      });
+    }
+  }, [queryClient]);
 
   useEffect(() => {
     if (!enabled) return;
 
     const socket = getNamespaceSocket('/launches');
-    if (!socket) return; // No WebSocket URL configured (e.g. Vercel) — skip
+    if (!socket) return; // No WebSocket URL configured — skip
 
-    socket.on('connect', () => {
+    const handleConnect = (): void => {
       connectedRef.current = true;
       socket.emit('subscribe_launches');
-    });
+    };
 
+    const handleLaunchUpdate = (): void => {
+      console.log('[LaunchWS] Received update, invalidating queries');
+      scheduleInvalidation();
+    };
+
+    const handleLaunchCreated = (payload: { data: unknown[] }): void => {
+      console.log(`[LaunchWS] ${payload.data.length} new launch(es) added`);
+      scheduleInvalidation();
+    };
+
+    const handleLaunchUpdated = (payload: { data: unknown[] }): void => {
+      console.log(`[LaunchWS] ${payload.data.length} launch(es) updated`);
+      scheduleInvalidation();
+    };
+
+    const handleLaunchRemoved = (payload: { data: unknown[] }): void => {
+      console.log(`[LaunchWS] ${payload.data.length} launch(es) removed`);
+      scheduleInvalidation();
+    };
+
+    socket.on('connect', handleConnect);
     socket.on('launches_update', handleLaunchUpdate);
     socket.on('launches_created', handleLaunchCreated);
     socket.on('launches_updated', handleLaunchUpdated);
@@ -83,6 +87,7 @@ export function useLaunchWebSocket(enabled: boolean = true): {
     }
 
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('launches_update', handleLaunchUpdate);
       socket.off('launches_created', handleLaunchCreated);
       socket.off('launches_updated', handleLaunchUpdated);
@@ -90,8 +95,12 @@ export function useLaunchWebSocket(enabled: boolean = true): {
       socket.emit('unsubscribe_launches');
       disconnectNamespace('/launches');
       connectedRef.current = false;
+      if (rafId.current !== null) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
+      }
     };
-  }, [enabled, handleLaunchUpdate, handleLaunchCreated, handleLaunchUpdated, handleLaunchRemoved]);
+  }, [enabled, scheduleInvalidation]);
 
   return { isConnected: connectedRef.current };
 }

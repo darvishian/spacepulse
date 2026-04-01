@@ -25,9 +25,17 @@ import type { Launch } from './types';
 import { STATUS_COLORS, STATUS_LABELS, PROVIDER_LABELS } from './types';
 import { Cartesian3 } from 'cesium';
 
-// ── Countdown Hook ──────────────────────────────────────────────────────
+// ── Shared countdown timer ──────────────────────────────────────────────
+// FIX: Single shared timer at the panel level instead of one per card.
+// This prevents N independent setIntervals from causing N independent
+// re-renders per second, which cascades through react-grid-layout.
 
-function useCountdown(targetDate: Date): string {
+/**
+ * Single hook for the panel to own the "now" tick. Returns a Date that
+ * updates every second. All cards receive this as a prop instead of
+ * running their own timers.
+ */
+function useSharedNow(): Date {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -35,6 +43,10 @@ function useCountdown(targetDate: Date): string {
     return () => clearInterval(interval);
   }, []);
 
+  return now;
+}
+
+function formatCountdown(targetDate: Date, now: Date): string {
   const diff = targetDate.getTime() - now.getTime();
   if (diff <= 0) return 'T+ ' + formatDuration(-diff);
   return 'T- ' + formatDuration(diff);
@@ -61,6 +73,7 @@ interface LaunchCardProps {
   launch: Launch;
   rank: number;
   isExpanded: boolean;
+  now: Date;
   onToggle: () => void;
   onFlyTo: () => void;
 }
@@ -69,10 +82,11 @@ function LaunchCard({
   launch,
   rank,
   isExpanded,
+  now,
   onToggle,
   onFlyTo,
 }: LaunchCardProps): React.ReactElement {
-  const countdown = useCountdown(launch.scheduledTime);
+  const countdown = formatCountdown(launch.scheduledTime, now);
   const isPast = launch.scheduledTime.getTime() < Date.now();
   const statusColor = STATUS_COLORS[launch.status] || '#888';
   const providerLabel = PROVIDER_LABELS[launch.provider] || launch.provider;
@@ -266,10 +280,11 @@ function DetailItem({
 
 const DEFAULT_VISIBLE = 3;
 
-export function UpcomingLaunchesPanel(): React.ReactElement {
+export const UpcomingLaunchesPanel = React.memo(function UpcomingLaunchesPanel(): React.ReactElement {
   const { data: launches, isLoading } = useLaunches();
   const viewer = useGlobeStore((s) => s.viewerRef);
   const setSelectedGlobeEntity = useGlobeStore((s) => s.setSelectedGlobeEntity);
+  const now = useSharedNow();
 
   const [showAll, setShowAll] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -340,6 +355,7 @@ export function UpcomingLaunchesPanel(): React.ReactElement {
                 launch={launch}
                 rank={index + 1}
                 isExpanded={expandedId === launch.id}
+                now={now}
                 onToggle={() =>
                   setExpandedId(expandedId === launch.id ? null : launch.id)
                 }
@@ -370,4 +386,4 @@ export function UpcomingLaunchesPanel(): React.ReactElement {
       </div>
     </div>
   );
-}
+});

@@ -20,26 +20,38 @@ export function SatelliteGrowthPanel(): React.ReactElement {
   const [filters, setFilters] = React.useState<FilterOptions>({});
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
   const [chartHeight, setChartHeight] = React.useState(200);
+  const lastHeightRef = React.useRef(200);
+  const rafIdRef = React.useRef<number | null>(null);
 
   // Fetch data for export button (same query key → shared cache with chart)
   const { data: chartData } = useSatelliteGrowthData({ timeRange, filters });
 
-  // Dynamically size the chart to fill available space
+  // Dynamically size the chart to fill available space.
+  // FIX: Debounce via rAF and only update when height changes by >2px
+  // to break the ResizeObserver → setChartHeight → re-render → resize loop.
   React.useEffect(() => {
     const container = chartContainerRef.current;
     if (!container) return;
 
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const height = entry.contentRect.height;
-        if (height > 80) {
-          setChartHeight(height);
+        const height = Math.round(entry.contentRect.height);
+        if (height > 80 && Math.abs(height - lastHeightRef.current) > 2) {
+          if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = requestAnimationFrame(() => {
+            rafIdRef.current = null;
+            lastHeightRef.current = height;
+            setChartHeight(height);
+          });
         }
       }
     });
 
     observer.observe(container);
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (rafIdRef.current !== null) cancelAnimationFrame(rafIdRef.current);
+    };
   }, []);
 
   return (

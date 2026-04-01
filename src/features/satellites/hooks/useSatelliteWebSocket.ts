@@ -2,6 +2,9 @@
  * WebSocket hook for real-time satellite/TLE updates.
  * Subscribes to the /satellites namespace and updates React Query cache
  * when the server pushes new TLE data.
+ *
+ * FIX (2026-03-30): Debounce cache invalidation and use stable effect
+ * deps to prevent re-registration loops.
  */
 
 'use client';
@@ -20,6 +23,8 @@ interface TleUpdatePayload {
 /**
  * Subscribe to real-time TLE updates via WebSocket.
  * Invalidates satellite React Query cache when bulk TLE updates arrive.
+ *
+ * Uses debounced invalidation to coalesce rapid events.
  */
 export function useSatelliteWebSocket(enabled: boolean = true): {
   isConnected: boolean;
@@ -27,36 +32,25 @@ export function useSatelliteWebSocket(enabled: boolean = true): {
   const queryClient = useQueryClient();
   const connectedRef = useRef(false);
 
-  const handleTleUpdate = useCallback(
-    (payload: TleUpdatePayload) => {
-      console.log(`[SatelliteWS] TLE update: ${payload.count} records`);
-      queryClient.invalidateQueries({ queryKey: ['satellite-tle'] });
-    },
-    [queryClient],
-  );
+  // Debounce: coalesce multiple events per frame into one invalidation
+  const pendingKeys = useRef<Set<string>>(new Set());
+  const rafId = useRef<number | null>(null);
 
-  const handleSatellitesAdded = useCallback(
-    (payload: { data: unknown[]; count: number }) => {
-      console.log(`[SatelliteWS] ${payload.count} new satellites detected`);
-      queryClient.invalidateQueries({ queryKey: ['satellite-tle'] });
-      queryClient.invalidateQueries({ queryKey: ['constellations'] });
-    },
-    [queryClient],
-  );
-
-  const handleSatellitesUpdated = useCallback(
-    (payload: { data: unknown[]; count: number }) => {
-      console.log(`[SatelliteWS] ${payload.count} satellites updated`);
-      queryClient.invalidateQueries({ queryKey: ['satellite-tle'] });
-    },
-    [queryClient],
-  );
-
-  const handleSatellitesRemoved = useCallback(
-    (payload: { data: unknown[]; count: number }) => {
-      console.log(`[SatelliteWS] ${payload.count} satellites decayed/removed`);
-      queryClient.invalidateQueries({ queryKey: ['satellite-tle'] });
-      queryClient.invalidateQueries({ queryKey: ['constellations'] });
+  const scheduleInvalidation = useCallback(
+    (...queryKeys: string[]) => {
+      for (const key of queryKeys) {
+        pendingKeys.current.add(key);
+      }
+      if (rafId.current === null) {
+        rafId.current = requestAnimationFrame(() => {
+          const keys = Array.from(pendingKeys.current);
+          pendingKeys.current.clear();
+          rafId.current = null;
+          for (const key of keys) {
+            queryClient.invalidateQueries({ queryKey: [key] });
+          }
+        });
+      }
     },
     [queryClient],
   );
@@ -65,13 +59,34 @@ export function useSatelliteWebSocket(enabled: boolean = true): {
     if (!enabled) return;
 
     const socket = getNamespaceSocket('/satellites');
-    if (!socket) return; // No WebSocket URL configured (e.g. Vercel) — skip
+    if (!socket) return; // No WebSocket URL configured — skip
 
-    socket.on('connect', () => {
+    const handleConnect = (): void => {
       connectedRef.current = true;
       socket.emit('subscribe_tle_updates');
-    });
+    };
 
+    const handleTleUpdate = (payload: TleUpdatePayload): void => {
+      console.log(`[SatelliteWS] TLE update: ${payload.count} records`);
+      scheduleInvalidation('satellite-tle');
+    };
+
+    const handleSatellitesAdded = (payload: { data: unknown[]; count: number }): void => {
+      console.log(`[SatelliteWS] ${payload.count} new satellites detected`);
+      scheduleInvalidation('satellite-tle', 'constellations');
+    };
+
+    const handleSatellitesUpdated = (payload: { data: unknown[]; count: number }): void => {
+      console.log(`[SatelliteWS] ${payload.count} satellites updated`);
+      scheduleInvalidation('satellite-tle');
+    };
+
+    const handleSatellitesRemoved = (payload: { data: unknown[]; count: number }): void => {
+      console.log(`[SatelliteWS] ${payload.count} satellites decayed/removed`);
+      scheduleInvalidation('satellite-tle', 'constellations');
+    };
+
+    socket.on('connect', handleConnect);
     socket.on('tle_update', handleTleUpdate);
     socket.on('satellites_added', handleSatellitesAdded);
     socket.on('satellites_updated', handleSatellitesUpdated);
@@ -84,14 +99,19 @@ export function useSatelliteWebSocket(enabled: boolean = true): {
     }
 
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('tle_update', handleTleUpdate);
       socket.off('satellites_added', handleSatellitesAdded);
       socket.off('satellites_updated', handleSatellitesUpdated);
       socket.off('satellites_removed', handleSatellitesRemoved);
       disconnectNamespace('/satellites');
       connectedRef.current = false;
+      if (rafId.current !== null) {
+        cancelAnimationFrame(rafId.current);
+        rafId.current = null;
+      }
     };
-  }, [enabled, handleTleUpdate, handleSatellitesAdded, handleSatellitesUpdated, handleSatellitesRemoved]);
+  }, [enabled, scheduleInvalidation]);
 
   return { isConnected: connectedRef.current };
 }
@@ -109,24 +129,25 @@ export function useConstellationWebSocket(
     if (!constellationName) return;
 
     const socket = getNamespaceSocket('/satellites');
-    if (!socket) return; // No WebSocket URL configured (e.g. Vercel) — skip
+    if (!socket) return;
 
     const handleConstellationUpdate = (payload: {
       constellation: string;
       data: unknown[];
       count: number;
-    }) => {
+    }): void => {
       if (payload.constellation === constellationName) {
         console.log(`[SatelliteWS] Constellation ${constellationName} update: ${payload.count} TLEs`);
         queryClient.invalidateQueries({ queryKey: ['constellation', constellationName] });
       }
     };
 
-    socket.on('connect', () => {
+    const handleConnect = (): void => {
       connectedRef.current = true;
       socket.emit('subscribe_constellation', constellationName);
-    });
+    };
 
+    socket.on('connect', handleConnect);
     socket.on('constellation_tle_update', handleConstellationUpdate);
 
     if (socket.connected) {
@@ -135,6 +156,7 @@ export function useConstellationWebSocket(
     }
 
     return () => {
+      socket.off('connect', handleConnect);
       socket.off('constellation_tle_update', handleConstellationUpdate);
       socket.emit('unsubscribe_constellation', constellationName);
       connectedRef.current = false;
