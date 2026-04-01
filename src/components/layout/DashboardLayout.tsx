@@ -25,6 +25,7 @@ import {
   Sun,
   AlertTriangle,
   Rocket,
+  Radio,
 } from 'lucide-react';
 
 /* ── Dynamic imports (no SSR — all use browser APIs) ──── */
@@ -69,6 +70,11 @@ const UpcomingLaunchesPanel = dynamic(
   { ssr: false }
 );
 
+const LiveStreamPanel = dynamic(
+  () => import('@/features/launches/LiveStreamPanel').then((m) => m.LiveStreamPanel),
+  { ssr: false }
+);
+
 const SatelliteDetailPopup = dynamic(
   () => import('@/features/satellites/SatelliteDetailPopup').then((m) => m.SatelliteDetailPopup),
   { ssr: false }
@@ -88,20 +94,23 @@ const DEFAULT_LAYOUTS: Layouts = {
   lg: [
     { i: 'satellite-growth', x: 0, y: 0, w: 6, h: 4, minW: 3, minH: 3 },
     { i: 'upcoming-launches', x: 6, y: 0, w: 6, h: 4, minW: 3, minH: 3 },
-    { i: 'space-weather', x: 0, y: 4, w: 6, h: 5, minW: 3, minH: 3 },
-    { i: 'at-risk-satellites', x: 6, y: 4, w: 6, h: 5, minW: 3, minH: 3 },
+    { i: 'live-stream', x: 0, y: 4, w: 6, h: 5, minW: 4, minH: 4 },
+    { i: 'space-weather', x: 6, y: 4, w: 6, h: 5, minW: 3, minH: 3 },
+    { i: 'at-risk-satellites', x: 0, y: 9, w: 12, h: 4, minW: 3, minH: 3 },
   ],
   md: [
     { i: 'satellite-growth', x: 0, y: 0, w: 4, h: 4, minW: 2, minH: 3 },
     { i: 'upcoming-launches', x: 4, y: 0, w: 4, h: 4, minW: 2, minH: 3 },
-    { i: 'space-weather', x: 0, y: 4, w: 4, h: 5, minW: 2, minH: 3 },
-    { i: 'at-risk-satellites', x: 4, y: 4, w: 4, h: 5, minW: 2, minH: 3 },
+    { i: 'live-stream', x: 0, y: 4, w: 4, h: 5, minW: 3, minH: 4 },
+    { i: 'space-weather', x: 4, y: 4, w: 4, h: 5, minW: 2, minH: 3 },
+    { i: 'at-risk-satellites', x: 0, y: 9, w: 8, h: 4, minW: 2, minH: 3 },
   ],
   sm: [
     { i: 'satellite-growth', x: 0, y: 0, w: 4, h: 4, minW: 4, minH: 3 },
     { i: 'upcoming-launches', x: 0, y: 4, w: 4, h: 4, minW: 4, minH: 3 },
-    { i: 'space-weather', x: 0, y: 8, w: 4, h: 5, minW: 4, minH: 3 },
-    { i: 'at-risk-satellites', x: 0, y: 13, w: 4, h: 5, minW: 4, minH: 3 },
+    { i: 'live-stream', x: 0, y: 8, w: 4, h: 5, minW: 4, minH: 4 },
+    { i: 'space-weather', x: 0, y: 13, w: 4, h: 5, minW: 4, minH: 3 },
+    { i: 'at-risk-satellites', x: 0, y: 18, w: 4, h: 4, minW: 4, minH: 3 },
   ],
 };
 
@@ -127,6 +136,12 @@ export function DashboardLayout(): React.ReactElement {
         title: 'Upcoming Launches',
         icon: <Rocket className="h-3 w-3" />,
         children: <UpcomingLaunchesPanel />,
+      },
+      {
+        id: 'live-stream',
+        title: 'Live Stream',
+        icon: <Radio className="h-3 w-3" />,
+        children: <LiveStreamPanel />,
       },
       {
         id: 'at-risk-satellites',

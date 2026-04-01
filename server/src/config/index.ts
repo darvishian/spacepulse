@@ -17,6 +17,9 @@ export const config = {
   tleApiUrl: process.env.TLE_API_URL || 'https://tle.ivanstanojevic.me/api/tle',
   rocketLaunchLiveUrl: process.env.ROCKETLAUNCH_LIVE_URL || 'https://fdo.rocketlaunch.live/json/launches',
 
+  // YouTube Data API v3 (free tier: 10k units/day)
+  youtubeApiKey: process.env.YOUTUBE_API_KEY || '',
+
   // Polling intervals (in seconds)
   pollLaunchesInterval: 60,      // Launch schedule changes infrequently
   pollTleInterval: 1800,         // 30 minutes — TLE updates are batched by Celestrak

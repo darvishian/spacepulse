@@ -117,6 +117,15 @@ export interface Trajectory {
   estimatedPerigee?: number;
 }
 
+export interface LiveStreamResult {
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  thumbnailUrl: string;
+  concurrentViewers: number;
+  embedUrl: string;
+}
+
 export interface LaunchFilter {
   provider?: LaunchProvider;
   status?: LaunchStatus;

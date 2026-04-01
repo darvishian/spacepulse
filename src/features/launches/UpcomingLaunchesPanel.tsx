@@ -18,9 +18,11 @@ import {
   Package,
   ExternalLink,
   Satellite,
+  Radio,
 } from 'lucide-react';
 import { useLaunches } from './hooks/useLaunches';
 import { useGlobeStore } from '../globe/store';
+import { useLivestreamStore } from './livestreamStore';
 import type { Launch } from './types';
 import { STATUS_COLORS, STATUS_LABELS, PROVIDER_LABELS } from './types';
 import { Cartesian3 } from 'cesium';
@@ -76,7 +78,10 @@ interface LaunchCardProps {
   now: Date;
   onToggle: () => void;
   onFlyTo: () => void;
+  onWatchLive: () => void;
 }
+
+const FOUR_HOURS_MS = 4 * 60 * 60 * 1000;
 
 function LaunchCard({
   launch,
@@ -85,6 +90,7 @@ function LaunchCard({
   now,
   onToggle,
   onFlyTo,
+  onWatchLive,
 }: LaunchCardProps): React.ReactElement {
   const countdown = formatCountdown(launch.scheduledTime, now);
   const isPast = launch.scheduledTime.getTime() < Date.now();
@@ -141,14 +147,28 @@ function LaunchCard({
             {launch.name}
           </div>
 
-          {/* Countdown */}
-          <div
-            className={`mt-1.5 flex items-center gap-1.5 text-xs font-mono font-bold tabular-nums ${
-              isImminent ? 'text-space-accent animate-pulse' : isPast ? 'text-white/25' : 'text-white/60'
-            }`}
-          >
-            <Clock className="h-3 w-3" />
-            {countdown}
+          {/* Countdown + Live badge */}
+          <div className="mt-1.5 flex items-center gap-2">
+            <div
+              className={`flex items-center gap-1.5 text-xs font-mono font-bold tabular-nums ${
+                isImminent ? 'text-space-accent animate-pulse' : isPast ? 'text-white/25' : 'text-white/60'
+              }`}
+            >
+              <Clock className="h-3 w-3" />
+              {countdown}
+            </div>
+            {Math.abs(launch.scheduledTime.getTime() - now.getTime()) < FOUR_HOURS_MS && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onWatchLive();
+                }}
+                className="flex items-center gap-1 rounded bg-red-500/20 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-red-400 hover:bg-red-500/30 transition-colors"
+              >
+                <Radio className="h-2.5 w-2.5 animate-pulse" />
+                Live
+              </button>
+            )}
           </div>
         </div>
 
@@ -228,7 +248,7 @@ function LaunchCard({
           )}
 
           {/* Actions */}
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-wrap gap-2 pt-1">
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -239,6 +259,21 @@ function LaunchCard({
               <MapPin className="h-3 w-3" />
               View on Globe
             </button>
+
+            {/* Watch Live — only when launch is within 4 hours */}
+            {Math.abs(launch.scheduledTime.getTime() - now.getTime()) < FOUR_HOURS_MS && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onWatchLive();
+                }}
+                className="flex items-center gap-1 rounded bg-red-500/15 px-2 py-1 text-[10px] font-semibold text-red-400/90 hover:bg-red-500/25 transition-colors animate-pulse"
+              >
+                <Radio className="h-3 w-3" />
+                Watch Live
+              </button>
+            )}
+
             {launch.webcastUrl && (
               <a
                 href={launch.webcastUrl}
@@ -284,6 +319,7 @@ export const UpcomingLaunchesPanel = React.memo(function UpcomingLaunchesPanel()
   const { data: launches, isLoading } = useLaunches();
   const viewer = useGlobeStore((s) => s.viewerRef);
   const setSelectedGlobeEntity = useGlobeStore((s) => s.setSelectedGlobeEntity);
+  const setActiveLaunch = useLivestreamStore((s) => s.setActiveLaunch);
   const now = useSharedNow();
 
   const [showAll, setShowAll] = useState(false);
@@ -301,6 +337,18 @@ export const UpcomingLaunchesPanel = React.memo(function UpcomingLaunchesPanel()
   const visibleLaunches = showAll
     ? sortedLaunches
     : sortedLaunches.slice(0, DEFAULT_VISIBLE);
+
+  const handleWatchLive = useCallback(
+    (launch: Launch) => {
+      setActiveLaunch({
+        id: launch.id,
+        name: launch.name,
+        scheduledTime: launch.scheduledTime,
+        webcastUrl: launch.webcastUrl,
+      });
+    },
+    [setActiveLaunch],
+  );
 
   const handleFlyTo = useCallback(
     (launch: Launch) => {
@@ -360,6 +408,7 @@ export const UpcomingLaunchesPanel = React.memo(function UpcomingLaunchesPanel()
                   setExpandedId(expandedId === launch.id ? null : launch.id)
                 }
                 onFlyTo={() => handleFlyTo(launch)}
+                onWatchLive={() => handleWatchLive(launch)}
               />
             ))}
 
