@@ -91,7 +91,7 @@ export interface LaunchSummary {
 interface RllLaunch {
   id: number;
   cospar_id?: string;
-  sort_date: string;
+  sort_date: string;           // Unix timestamp in SECONDS (as a string)
   name: string;
   provider?: { id: number; name: string; slug?: string };
   vehicle?: { id: number; name: string; company_id?: number; slug?: string };
@@ -112,15 +112,18 @@ interface RllLaunch {
     name: string;
     description?: string;
   }>;
-  launch_description?: string;
-  win_open?: string;
-  win_close?: string;
+  mission_description?: string;  // Full mission description (top-level)
+  launch_description?: string;   // Short launch sentence
+  win_open?: string;             // ISO 8601
+  t0?: string | null;            // Actual liftoff time
+  win_close?: string | null;
   date_str?: string;
   tags?: Array<{ id: number; text: string }>;
   slug?: string;
   weather_summary?: string | null;
   quicktext?: string;
-  result?: number;
+  result?: number;     // Status code: -1=upcoming, 1=Go, 2=TBD, 3=Success, 4=Failure, 5=Hold, 6=InFlight
+  suborbital?: boolean;
   modified?: string;
 }
 
@@ -291,10 +294,19 @@ export async function fetchRocketLaunchLive(
       const vehicleName = nameParts[0]?.trim() ?? rll.vehicle?.name ?? 'Unknown';
       const missionName = nameParts[1]?.trim() ?? rll.name;
 
-      const scheduledTime = new Date(rll.sort_date);
+      // sort_date is a Unix timestamp in SECONDS (as a string).
+      // Prefer win_open (ISO 8601) when available for better precision.
+      let scheduledTime: Date;
+      if (rll.win_open) {
+        scheduledTime = new Date(rll.win_open);
+      } else {
+        const epochSeconds = parseInt(rll.sort_date, 10);
+        scheduledTime = new Date(epochSeconds * 1000);
+      }
 
+      // Determine status: result -1 = upcoming/no result yet
       let status: LaunchStatus;
-      if (rll.result !== undefined && rll.result !== null) {
+      if (rll.result !== undefined && rll.result !== null && rll.result !== -1) {
         status = mapRllStatus(rll.result);
       } else if (scheduledTime.getTime() < Date.now()) {
         status = LaunchStatus.UNKNOWN;
@@ -328,7 +340,7 @@ export async function fetchRocketLaunchLive(
             }))
           : [],
         status,
-        missionDescription: rll.launch_description ?? rll.quicktext ?? undefined,
+        missionDescription: rll.mission_description ?? rll.launch_description ?? rll.quicktext ?? undefined,
         lastUpdated: new Date().toISOString(),
       };
     });
@@ -708,9 +720,12 @@ export async function fetchUpcomingLaunches(): Promise<Launch[]> {
     }
 
     // Secondary: SpaceX enrichment
+    // NOTE: SpaceX v4 API is frozen (~2022), so we filter out stale launches.
     try {
       spacexLaunches = await fetchSpacexLaunches('upcoming');
-      console.log(`[LaunchesService] SpaceX API: ${spacexLaunches.length} upcoming`);
+      const now = Date.now();
+      spacexLaunches = spacexLaunches.filter((l) => new Date(l.scheduledTime).getTime() > now);
+      console.log(`[LaunchesService] SpaceX API: ${spacexLaunches.length} upcoming (future only)`);
     } catch (error) {
       console.warn('[LaunchesService] SpaceX API failed:', error);
     }
